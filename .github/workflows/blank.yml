@@ -1,0 +1,153 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Dec  1 16:08:31 2020
+
+@author: sande
+"""
+#pip install tensorflow
+#pip install keras
+
+
+import pandas as pd
+import numpy as np
+import math
+import pandas_datareader as web
+from sklearn.preprocessing import MinMaxScaler
+
+import tensorflow as tf
+from tensorflow import keras
+from keras.models import Sequential
+from keras.layers import Dense, LSTM 
+import matplotlib.pyplot as plt
+plt.style.use('fivethirtyeight')
+
+#Get apple data from Yahoo API
+df = web.DataReader('AAPL', data_source = 'yahoo', start = '2017-01-01', end = '2020-11-10')
+
+#Visualize the closing price of the data
+plt.figure(figsize=(16,8))
+plt.title('Close Price History')
+plt.plot(df['Close'])
+plt.xlabel('Date', fontsize = 18)
+plt.ylabel('Close Price USD ($)', fontsize = 18)
+plt.show()
+
+
+#Create a new dataframe with only the 'Close' column
+data = df.filter(['Close'])
+#convert the dataframe to a numpy array
+dataset = data.values
+dataset.shape
+#Get the number of rows to train the model on (in this case, 80% of the data)
+training_data_len = math.ceil(len(dataset) * .8)
+training_data_len==math.ceil(972*.8)    #checking to make sure 80% of the data has been selected
+
+#Scale the data
+#computes the min/max to be used and then transforms the data to be used with these values
+scaler = MinMaxScaler(feature_range = (0,1))
+scaled_data = scaler.fit_transform(dataset)
+scaled_data
+
+#Create the training data set
+#Create the scaled training data set
+train_data = scaled_data[0:training_data_len , :]
+#Split the data into x_train and y_train data sets, where initially they are both sets of untrained data
+x_train = []    #independent variable
+y_train = []    #dependent variables
+
+for i in range(60, len(train_data)):
+    x_train.append(train_data[i-60:i, 0])       #training data set will have 60 values 
+    y_train.append(train_data[i,0])             #y_train data will contain the 61st value
+    if i<=61:
+        print(x_train)
+        print(y_train)
+        print()
+
+#convert the x_train and y_train to numpy arrays
+x_train, y_train = np.array(x_train), np.array(y_train)
+
+#Reshape the data sets because the input has to be 3 dimensional for the LST model
+x_train = np.reshape(x_train,(x_train.shape[0], x_train.shape[1], 1))
+x_train.shape
+
+#Build the LSTM Model
+model = Sequential()
+model.add(LSTM(50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+model.add(LSTM(50, return_sequences=False))
+model.add(Dense(25))
+model.add(Dense(1))
+
+
+#Compile the Model
+model.compile(optimizer = 'adam', loss = 'mean_squared_error')
+
+#Train the model
+model.fit(x_train, y_train, batch_size=1, epochs =1)
+
+
+#Create the testing data set
+#Create a new array containing scaled values from index 718 to 972
+test_data = scaled_data[training_data_len - 60: 972: , :]
+#Create the data sets x_test and y_test
+x_test = []
+y_test = dataset[training_data_len:, :]
+for i in range(60, len(test_data)):
+    x_test.append(test_data[i-60:i,0])
+
+#Convert the data to a numpy array
+x_test = np.array(x_test)
+
+#Rehsape the data into 3-dimensional
+x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
+
+#Get the models predicted price values
+predictions = model.predict(x_test)
+predictions = scaler.inverse_transform(predictions)
+
+#Get teh ro0t mean squared error (RMSE) to measure the accruacy of the model
+#the lower the value the better, a value of 0 means that predictions were perfect
+rmse = np.sqrt( np.mean( predictions - y_test)**2)
+rmse
+
+#Plot the data
+train = data[:training_data_len]
+valid = data[training_data_len:]
+valid['Predictions'] = predictions
+#Visualize the data
+plt.figure(figsize=(16,8))
+plt.title('Predictive Model')
+plt.xlabel('Date', fontsize = 18)
+plt.ylabel('Close Price ($)', fontsize = 18)
+plt.plot(train['Close'])
+plt.plot(valid[['Close','Predictions']])
+plt.legend(['Train','Val','Predictions'], loc ='lower right')
+plt.show()
+
+#Show the actual price and predicted prices
+valid
+
+
+#Get the quote of apple for trying to predict the price
+apple_quote = web.DataReader('AAPL', data_source = 'yahoo', start = '2017-01-01', end = '2020-11-10')
+#Create new data frame
+new_df = apple_quote.filter(['Close'])
+#Get the last 60 day clsign price values and convert the data frame into a numpy array
+last_60_days = new_df[-60:].values
+#Scale the dat to be values between 0 and 1
+last_60_days_scaled = scaler.transform(last_60_days)
+#Create an empty list
+X_test = []
+#Append the last 60 days to the X_test list
+X_test.append(last_60_days_scaled)
+#convert the X_test data set to a numpy array
+X_test = np.array(X_test)
+#Reshape the array to be 3-d
+X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
+#Get the predicted scaled price
+pred_price = model.predict(X_test)
+#undo the scaling from the test data
+pred_price = scaler.inverse_transform(pred_price)
+print(pred_price)
+#predicted price is $116.45 vs actual of $119.49
+
+
